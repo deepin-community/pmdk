@@ -1,0 +1,49 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+DEB_UPSTREAM_VERSION = $(shell dpkg-parsechangelog -S version | cut -d - -f 1 | cut -d : -f 2)
+
+BUILD_ARGS = prefix=/usr libdir=/usr/lib/$(DEB_HOST_MULTIARCH) sysconfdir=/etc bashcompdir=/usr/share/bash-completion/completions NORPATH=1 BUILD_EXAMPLES=n BUILD_BENCHMARKS=n
+
+%:
+	dh $@ --with bash-completion
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf src/test/unittest/__pycache__/
+
+override_dh_auto_build:
+	+$(MAKE) doc
+	for x in `grep -l _LOG_LEVEL doc/lib*/lib*.7`; do \
+		ed -s <debian/man-debug.ed $$x; done
+	dh_auto_build  -- $(BUILD_ARGS)
+
+override_dh_auto_install:
+	dh_auto_install -- $(BUILD_ARGS)
+
+override_dh_install:
+	mkdir -p debian/tmp/usr/share/pmdk/
+	cp utils/pmdk.magic debian/tmp/usr/share/pmdk/
+	dh_install
+
+override_dh_installexamples:
+	dh_installexamples --exclude=.gitignore --exclude=.vcxproj
+
+override_dh_installman:
+	dh_installman
+	dh_installman -p pmdk-tools doc/rpmemd/*.1
+
+override_dh_missing:
+	dh_missing --list-missing --exclude=usr/share/man --exclude=usr/lib/$(DEB_HOST_MULTIARCH)/pmdk_debug/ --exclude=usr/share/bash-completion/completions/pmempool
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+#	cp debian/testconfig.* src/test/
+	# Still fails/times out on weird setups (a 33GB fallocate).
+#	rm -f src/test/obj_pool/TEST34
+	# binutils regression #964457
+#	rm -rf src/test/scope/TESTS.py
+#	+$(MAKE) check pycheck $(BUILD_ARGS)
+endif
